@@ -38,11 +38,36 @@ class PrefsManager(context: Context) {
         get() = prefs.getBoolean(KEY_RESTORED_NOTIFICATIONS, true)
         set(value) = prefs.edit { putBoolean(KEY_RESTORED_NOTIFICATIONS, value) }
 
+    var phoneRole: String
+        get() = prefs.getString(KEY_PHONE_ROLE, AlertCatalog.ROLE_DAD).orEmpty()
+        set(value) = prefs.edit { putString(KEY_PHONE_ROLE, value) }
+
+    var lastServerPollAt: String
+        get() = prefs.getString(KEY_LAST_SERVER_POLL_AT, "Waiting for server status").orEmpty()
+        set(value) = prefs.edit { putString(KEY_LAST_SERVER_POLL_AT, value) }
+
+    var lastLineFailState: String
+        get() = prefs.getString(KEY_LAST_LINE_FAIL_STATE, "Unknown").orEmpty()
+        set(value) = prefs.edit { putString(KEY_LAST_LINE_FAIL_STATE, value) }
+
+    var lastPushResult: String
+        get() = prefs.getString(KEY_LAST_PUSH_RESULT, "Waiting for first push").orEmpty()
+        set(value) = prefs.edit { putString(KEY_LAST_PUSH_RESULT, value) }
+
     fun alertMode(alarm: String): String =
-        prefs.getString(alertModeKey(alarm), defaultAlertMode(alarm)).orEmpty()
+        prefs.getString(alertModeKey(alarm), AlertCatalog.defaultMode(alarm, phoneRole)).orEmpty()
 
     fun setAlertMode(alarm: String, mode: String) {
         prefs.edit { putString(alertModeKey(alarm), mode) }
+    }
+
+    fun applyRole(role: String) {
+        prefs.edit {
+            putString(KEY_PHONE_ROLE, role)
+            AlertCatalog.rules.forEach { rule ->
+                putString(alertModeKey(rule.alarm), AlertCatalog.defaultMode(rule.alarm, role))
+            }
+        }
     }
 
     fun saveServerSettings(serverUrl: String, registrationSecret: String) {
@@ -63,14 +88,12 @@ class PrefsManager(context: Context) {
         const val KEY_LAST_EVENT = "last_event"
         const val KEY_LAST_REGISTRATION_STATUS = "last_registration_status"
         const val KEY_RESTORED_NOTIFICATIONS = "restored_notifications"
+        const val KEY_PHONE_ROLE = "phone_role"
+        const val KEY_LAST_SERVER_POLL_AT = "last_server_poll_at"
+        const val KEY_LAST_LINE_FAIL_STATE = "last_line_fail_state"
+        const val KEY_LAST_PUSH_RESULT = "last_push_result"
 
         fun alertModeKey(alarm: String): String = "alert_mode_${alarm.lowercase()}"
-
-        fun defaultAlertMode(alarm: String): String =
-            when (alarm) {
-                "PV_LOSS" -> AlertMode.NOTIFICATION
-                else -> AlertMode.ALARM
-            }
     }
 }
 

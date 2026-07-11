@@ -9,6 +9,8 @@ Small Python service for the Oracle VM. It polls ShineMonitor every 60 to 120 se
 
 This uses `shinemonitor-api` for login/signing and its generated action support. Alarm polling is based on Eybond's documented `queryDeviceWarning` action, whose response includes `warning[x].desc`, `warning[x].code`, `warning[x].gts`, and optional `warning[x].cts` clear time.
 
+For inverter telemetry, this Knoxhybrid account returns title/value rows from `queryDeviceLastData`; `querySPDeviceLastData` returns a vendor-specific missing-parameter error. The server supports both shapes and falls back to `queryDeviceLastData`.
+
 Reference:
 
 - https://github.com/davidsmfreire/shinemonitor-api
@@ -65,6 +67,25 @@ Alarm keywords are configurable:
 ALARM_DEFINITIONS_JSON=[{"name":"LINE_FAIL","keywords":["LINE_FAIL","Line Fail"],"severity":"critical"},{"name":"PV_LOSS","keywords":["PV Loss","PV_LOSS","PV input lost"],"severity":"warning"}]
 ```
 
+Additional telemetry-based alerts are enabled by default and can be tuned without a redeploy:
+
+```bash
+ENABLE_DATA_ALERTS=true
+BATTERY_LOW_PERCENT=35
+HIGH_LOAD_WATTS=1200
+HIGH_LOAD_PERCENT=70
+PV_LOSS_MAX_WATTS=20
+PV_LOSS_DAY_START_HOUR=7
+PV_LOSS_DAY_END_HOUR=18
+STALE_DATA_MINUTES=10
+LOCAL_TIMEZONE=Asia/Karachi
+ENABLE_DAILY_SUMMARY=true
+DAILY_SUMMARY_HOUR=21
+STATUS_PUSH_INTERVAL_MINUTES=30
+```
+
+Synthetic alert names are always available even if `ALARM_DEFINITIONS_JSON` only lists `LINE_FAIL`: `PV_LOSS`, `BATTERY_LOW`, `HIGH_LOAD`, `STALE_DATA`, and `DAILY_SUMMARY`.
+
 ## Local Run
 
 ```bash
@@ -116,4 +137,5 @@ delivery is outbound, so public inbound access to port `8088` is not required.
 - Capture a real `LINE_FAIL` warning and confirm the keyword appears in `desc` or `code`.
 - Capture a real clear event and confirm active warnings disappear or include `cts`.
 - Confirm `PV_LOSS` wording/code from your inverter model.
+- Confirm telemetry thresholds match the real battery and load behavior before depending on battery-low/high-load decisions.
 - Confirm FCM data pushes wake the exact phone model after force-kill and reboot.

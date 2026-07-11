@@ -27,7 +27,7 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
             .addOnCompleteListener { task ->
                 prefs.isRegistered = task.isSuccessful
                 prefs.lastRegistrationStatus = if (task.isSuccessful) {
-                    "Connected - watching for LINE_FAIL alerts"
+                    "Connected - watching for power alerts"
                 } else {
                     "Cloud subscription failed: ${task.exception?.message}"
                 }
@@ -42,18 +42,18 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
         Log.i(TAG, "FCM message received type=$type alarm=$alarm severity=$severity")
 
         when (type) {
-            "alarm_start" -> startAlarm(alarm, severity)
-            "alarm_stop" -> stopAlarm(alarm)
+            "alarm_start" -> startAlarm(alarm, severity, data["message"])
+            "alarm_stop" -> stopAlarm(alarm, data["message"])
+            "daily_summary" -> showInformationalMessage(alarm, data["message"].orEmpty())
+            "server_status" -> updateServerStatus(data)
             else -> Log.w(TAG, "Ignoring unknown FCM type=$type")
         }
     }
 
-    private fun startAlarm(alarm: String, severity: String) {
-        val message = when (alarm) {
-            "PV_LOSS" -> "Solar input is lost. Check load and battery drain."
-            else -> "Grid power is out. Turn off the air conditioner before the battery drains."
-        }
+    private fun startAlarm(alarm: String, severity: String, serverMessage: String?) {
+        val message = serverMessage?.takeIf { it.isNotBlank() } ?: AlertCatalog.activeMessageFor(alarm)
         val prefs = PrefsManager(this)
+        updateServerStatusSnapshot(alarm = alarm, lineFailActive = if (alarm == "LINE_FAIL") true else null)
         when (prefs.alertMode(alarm)) {
             AlertMode.OFF -> {
                 prefs.lastEvent = "$alarm alert ignored"
@@ -73,22 +73,44 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
         ContextCompat.startForegroundService(this, intent)
     }
 
-    private fun stopAlarm(alarm: String) {
+    private fun stopAlarm(alarm: String, serverMessage: String?) {
         val prefs = PrefsManager(this)
-        prefs.lastEvent = "$alarm cleared; grid power restored"
+        val body = serverMessage?.takeIf { it.isNotBlank() } ?: AlertCatalog.clearedMessageFor(alarm)
+        prefs.lastEvent = "$alarm cleared"
+        updateServerStatusSnapshot(alarm = alarm, lineFailActive = if (alarm == "LINE_FAIL") false else null)
         if (prefs.isAlarmRunning) {
             val intent = Intent(this, AlarmForegroundService::class.java).setAction(AlarmActions.ACTION_STOP)
             ContextCompat.startForegroundService(this, intent)
         }
         if (prefs.restoredNotificationsEnabled && prefs.alertMode(alarm) != AlertMode.OFF) {
-            val title = if (alarm == "PV_LOSS") "Solar input restored" else "Grid power restored"
-            val body = if (alarm == "PV_LOSS") {
-                "PV loss has cleared."
-            } else {
-                "LINE_FAIL has cleared. Electricity is back."
-            }
-            showStatusNotification(alarm, title, body)
+            showStatusNotification(alarm, "${AlertCatalog.titleFor(alarm)} cleared", body)
         }
+    }
+
+    private fun showInformationalMessage(alarm: String, message: String) {
+        val prefs = PrefsManager(this)
+        if (prefs.alertMode(alarm) == AlertMode.OFF) return
+        val body = message.ifBlank { AlertCatalog.titleFor(alarm) }
+        prefs.lastEvent = "${AlertCatalog.titleFor(alarm)} received"
+        showStatusNotification(alarm, AlertCatalog.titleFor(alarm), body)
+    }
+
+    private fun updateServerStatus(data: Map<String, String>) {
+        val prefs = PrefsManager(this)
+        prefs.lastServerPollAt = data["last_poll_at"].orEmpty().ifBlank { data["timestamp"].orEmpty() }
+        prefs.lastLineFailState = if (data["line_fail_active"] == "true") "Active" else "Clear"
+        prefs.lastPushResult = data["last_push_result"].orEmpty().ifBlank { "Status heartbeat received" }
+        prefs.lastEvent = data["message"].orEmpty().ifBlank { "Server status updated" }
+        sendBroadcast(Intent(AlarmActions.ACTION_STATE_CHANGED).setPackage(packageName))
+    }
+
+    private fun updateServerStatusSnapshot(alarm: String, lineFailActive: Boolean?) {
+        val prefs = PrefsManager(this)
+        if (lineFailActive != null) {
+            prefs.lastLineFailState = if (lineFailActive) "Active" else "Clear"
+        }
+        prefs.lastPushResult = "$alarm push received"
+        sendBroadcast(Intent(AlarmActions.ACTION_STATE_CHANGED).setPackage(packageName))
     }
 
     private fun showStatusNotification(alarm: String, title: String, body: String) {
@@ -115,11 +137,10 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun activeTitle(alarm: String): String =
-        if (alarm == "PV_LOSS") "Solar input lost" else "Grid power out"
+    private fun activeTitle(alarm: String): String = AlertCatalog.titleFor(alarm)
 
     private fun notificationIdFor(alarm: String): Int =
-        if (alarm == "PV_LOSS") AlarmActions.RESTORED_NOTIFICATION_ID + 1 else AlarmActions.RESTORED_NOTIFICATION_ID
+        AlarmActions.RESTORED_NOTIFICATION_ID + kotlin.math.abs(alarm.hashCode() % 500)
 
     private fun createStatusChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

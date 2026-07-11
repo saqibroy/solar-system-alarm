@@ -45,7 +45,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 4. Enter the same `REGISTRATION_SECRET` used on the server.
 5. Tap `Connect`.
 6. Tap `Test Alarm for 10 seconds`.
-7. On Xiaomi, Oppo, Vivo, Realme, Poco, Redmi and similar devices, manually enable Autostart, unrestricted battery/background use, and lock the app in Recents.
+7. Pick a phone role. Use `Dad phone` for loud critical alarms, or `Monitor` for quiet notifications.
+8. On Xiaomi, Oppo, Vivo, Realme, Poco, Redmi and similar devices, manually enable Autostart, unrestricted battery/background use, and lock the app in Recents.
 
 ## Alert Modes
 
@@ -55,7 +56,16 @@ The app can handle each incoming alert as:
 - `Notify`: show a normal notification only.
 - `Off`: ignore that alert on this phone.
 
-`LINE_FAIL` defaults to `Alarm`. Restored/clear messages default to a normal notification.
+Dad phone defaults:
+
+- `LINE_FAIL`, `BATTERY_LOW`, `HIGH_LOAD`: loud alarm.
+- `PV_LOSS`, `STALE_DATA`, `DAILY_SUMMARY`: notification.
+
+Monitor phone defaults:
+
+- All alert types: notification.
+
+Restored/clear messages use normal notifications when the alert is not off.
 
 ## FCM Payloads
 
@@ -71,7 +81,7 @@ Stop:
 {"type":"alarm_stop","alarm":"LINE_FAIL","timestamp":"2026-07-11T12:10:00Z"}
 ```
 
-`PV_LOSS` uses the same start/stop pattern.
+`BATTERY_LOW`, `HIGH_LOAD`, `PV_LOSS`, and `STALE_DATA` use the same start/stop pattern. `daily_summary` shows a notification. `server_status` updates the in-app status panel without showing a notification.
 
 ## End-To-End Test Plan
 

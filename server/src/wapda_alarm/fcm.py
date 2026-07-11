@@ -27,10 +27,11 @@ class FcmAlarmSender:
         transition: Transition,
         alarm: AlarmDefinition,
         tokens: list[str],
-    ) -> None:
+        message: Optional[str] = None,
+    ) -> list[str]:
         if not tokens and not self.topic:
             LOGGER.warning("fcm_no_targets_configured", extra=extra(alarm=transition.alarm))
-            return
+            return []
 
         data = {
             "type": transition.event_type,
@@ -39,10 +40,13 @@ class FcmAlarmSender:
             "timestamp": transition.timestamp,
             "active_ids": ",".join(transition.active_ids),
         }
+        if message:
+            data["message"] = message
 
+        results: list[str] = []
         if tokens:
             for token in tokens:
-                self._send_message(
+                result = self._send_message(
                     messaging.Message(
                         token=token,
                         data=data,
@@ -54,7 +58,9 @@ class FcmAlarmSender:
                     transition,
                     target="token",
                 )
-            return
+                if result:
+                    results.append(result)
+            return results
 
         topic_message = (
             messaging.Message(
@@ -66,22 +72,78 @@ class FcmAlarmSender:
                 ),
             )
             if self.topic
-            else None,
+            else None
         )
-        self._send_message(
+        result = self._send_message(
             topic_message,
             transition,
             target=f"topic:{self.topic}",
         )
+        return [result] if result else []
+
+    def send_custom(
+        self,
+        *,
+        event_type: str,
+        alarm: str,
+        severity: str,
+        timestamp: str,
+        tokens: list[str],
+        message: str,
+        extra_data: Optional[dict[str, str]] = None,
+    ) -> list[str]:
+        if not tokens and not self.topic:
+            LOGGER.warning("fcm_no_targets_configured", extra=extra(alarm=alarm))
+            return []
+
+        data = {
+            "type": event_type,
+            "alarm": alarm,
+            "severity": severity,
+            "timestamp": timestamp,
+            "message": message,
+        }
+        if extra_data:
+            data.update(extra_data)
+
+        transition = Transition(alarm=alarm, event_type=event_type, active_ids=(), timestamp=timestamp)
+        results: list[str] = []
+        if tokens:
+            for token in tokens:
+                result = self._send_message(
+                    messaging.Message(
+                        token=token,
+                        data=data,
+                        android=messaging.AndroidConfig(priority="normal", ttl=timedelta(hours=6)),
+                    ),
+                    transition,
+                    target="token",
+                )
+                if result:
+                    results.append(result)
+            return results
+
+        result = self._send_message(
+            messaging.Message(
+                topic=self.topic,
+                data=data,
+                android=messaging.AndroidConfig(priority="normal", ttl=timedelta(hours=6)),
+            )
+            if self.topic
+            else None,
+            transition,
+            target=f"topic:{self.topic}",
+        )
+        return [result] if result else []
 
     def _send_message(
         self,
         message: Optional[messaging.Message],
         transition: Transition,
         target: str,
-    ) -> None:
+    ) -> Optional[str]:
         if message is None:
-            return
+            return None
         try:
             result = messaging.send(message)
             LOGGER.info(
@@ -93,8 +155,10 @@ class FcmAlarmSender:
                     result=result,
                 ),
             )
+            return result
         except Exception:
             LOGGER.exception(
                 "fcm_send_failed",
                 extra=extra(alarm=transition.alarm, event_type=transition.event_type, target=target),
             )
+            return None

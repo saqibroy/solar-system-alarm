@@ -52,6 +52,13 @@ class AlarmStateStore:
             if entry.get("active")
         }
 
+    def get_meta(self, key: str, default: Any = None) -> Any:
+        return self.data.get("meta", {}).get(key, default)
+
+    def set_meta(self, key: str, value: Any) -> None:
+        self.data.setdefault("meta", {})[key] = value
+        self.save()
+
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile("w", dir=self.path.parent, delete=False) as tmp:

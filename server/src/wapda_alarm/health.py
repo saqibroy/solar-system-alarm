@@ -20,6 +20,9 @@ class RuntimeStatus:
     last_poll_ok: bool = False
     last_error: Optional[str] = None
     poll_count: int = 0
+    last_line_fail_active: bool = False
+    last_push_result: Optional[str] = None
+    last_snapshot_at: Optional[str] = None
 
 
 def create_app(
@@ -43,6 +46,9 @@ def create_app(
                 "last_poll_ok": status.last_poll_ok,
                 "last_error": status.last_error,
                 "poll_count": status.poll_count,
+                "last_line_fail_active": status.last_line_fail_active,
+                "last_push_result": status.last_push_result,
+                "last_snapshot_at": status.last_snapshot_at,
                 "active_alarms": state_store.active_alarms(),
                 "registered_tokens": len(token_registry.tokens()),
             }

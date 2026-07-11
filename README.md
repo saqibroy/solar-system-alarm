@@ -1,6 +1,6 @@
 # WAPDA Alarm
 
-Independent alarm path for a Knoxhybrid/ShineMonitor inverter installation. The server polls ShineMonitor for active warnings and sends Firebase Cloud Messaging data pushes. The Android app receives those pushes and rings a loud foreground alarm until stopped locally or cleared by the server.
+Independent alarm path for a Knoxhybrid/ShineMonitor inverter installation. The server polls ShineMonitor for active warnings and inverter readings, then sends Firebase Cloud Messaging data pushes. The Android app receives those pushes and either rings a loud foreground alarm or shows a normal notification based on the phone's local role and alert rules.
 
 ## Layout
 
@@ -16,13 +16,15 @@ Independent alarm path for a Knoxhybrid/ShineMonitor inverter installation. The 
 3. Build and sideload the Android app, enter the Oracle server URL and registration secret, then register the phone.
 4. Configure `/server/.env` on the Oracle VM with ShineMonitor credentials, Knoxhybrid `companykey`, Firebase service-account path, and alarm definitions.
 5. Install the server as a `systemd` service and check `/health`.
-6. Simulate or trigger `LINE_FAIL`, confirm FCM arrives, and confirm the phone rings over lock screen/silent mode.
+6. Simulate or trigger `LINE_FAIL`, confirm FCM arrives, and confirm the dad phone rings over lock screen/silent mode.
 
 ## Reliability Notes
 
-This intentionally does not rely on Knoxhybrid push notifications. The server polls Eybond/ShineMonitor directly using the reverse-engineered `shinemonitor-api` package for auth/signing and calls `queryDeviceWarning` for alarm status.
+This intentionally does not rely on Knoxhybrid push notifications. The server polls Eybond/ShineMonitor directly using the reverse-engineered `shinemonitor-api` package for auth/signing, calls `queryDeviceWarning` for alarm status, and reads inverter telemetry from `queryDeviceLastData` for battery/load/PV/stale-data checks.
 
 The exact warning descriptions/codes for `LINE_FAIL` and `PV_LOSS` must be verified against your own account before relying on it. The parser treats a warning as active when it matches a configured keyword and has no `cts` clear timestamp.
+
+The current app supports these alert types: `LINE_FAIL`, `BATTERY_LOW`, `HIGH_LOAD`, `PV_LOSS`, `STALE_DATA`, and `DAILY_SUMMARY`. Dad's phone defaults to loud alarms for grid failure, low battery, and high load. A monitor phone defaults to normal notifications.
 
 ## Docs
 

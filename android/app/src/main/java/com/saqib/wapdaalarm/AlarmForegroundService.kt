@@ -246,7 +246,7 @@ class AlarmForegroundService : Service() {
                 .putExtra(AlarmActions.EXTRA_MESSAGE, notificationMessage),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val title = if (alarmName == "PV_LOSS") "Solar input lost" else "Grid power alarm"
+        val title = AlertCatalog.titleFor(alarmName)
 
         return NotificationCompat.Builder(this, AlarmActions.NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
@@ -264,10 +264,7 @@ class AlarmForegroundService : Service() {
     }
 
     private fun messageForAlarm(name: String): String =
-        when (name) {
-            "PV_LOSS" -> "Solar input is lost. Check load and battery drain."
-            else -> "Grid power is out. Turn off the air conditioner before the battery drains."
-        }
+        AlertCatalog.activeMessageFor(name)
 
     private fun createAlarmChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

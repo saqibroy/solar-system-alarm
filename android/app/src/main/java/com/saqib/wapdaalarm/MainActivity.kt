@@ -79,9 +79,12 @@ private fun WapdaAlarmApp() {
     var registered by remember { mutableStateOf(prefs.isRegistered) }
     var lastEvent by remember { mutableStateOf(prefs.lastEvent) }
     var registrationStatus by remember { mutableStateOf(prefs.lastRegistrationStatus) }
-    var lineFailMode by remember { mutableStateOf(prefs.alertMode("LINE_FAIL")) }
-    var pvLossMode by remember { mutableStateOf(prefs.alertMode("PV_LOSS")) }
+    var phoneRole by remember { mutableStateOf(prefs.phoneRole) }
+    var alertModes by remember { mutableStateOf(readAlertModes(prefs)) }
     var restoredNotifications by remember { mutableStateOf(prefs.restoredNotificationsEnabled) }
+    var lastServerPollAt by remember { mutableStateOf(prefs.lastServerPollAt) }
+    var lastLineFailState by remember { mutableStateOf(prefs.lastLineFailState) }
+    var lastPushResult by remember { mutableStateOf(prefs.lastPushResult) }
 
     fun refresh() {
         permissions = PermissionState.read(context)
@@ -90,9 +93,12 @@ private fun WapdaAlarmApp() {
         registered = prefs.isRegistered
         lastEvent = prefs.lastEvent
         registrationStatus = prefs.lastRegistrationStatus
-        lineFailMode = prefs.alertMode("LINE_FAIL")
-        pvLossMode = prefs.alertMode("PV_LOSS")
+        phoneRole = prefs.phoneRole
+        alertModes = readAlertModes(prefs)
         restoredNotifications = prefs.restoredNotificationsEnabled
+        lastServerPollAt = prefs.lastServerPollAt
+        lastLineFailState = prefs.lastLineFailState
+        lastPushResult = prefs.lastPushResult
     }
 
     LaunchedEffect(Unit) {
@@ -150,9 +156,15 @@ private fun WapdaAlarmApp() {
                         refresh()
                     }
                 )
+                PhoneRolePanel(
+                    role = phoneRole,
+                    onRoleChanged = {
+                        prefs.applyRole(it)
+                        refresh()
+                    }
+                )
                 AlertRulesPanel(
-                    lineFailMode = lineFailMode,
-                    pvLossMode = pvLossMode,
+                    alertModes = alertModes,
                     restoredNotifications = restoredNotifications,
                     onModeChanged = { alarm, mode ->
                         prefs.setAlertMode(alarm, mode)
@@ -162,6 +174,11 @@ private fun WapdaAlarmApp() {
                         prefs.restoredNotificationsEnabled = it
                         refresh()
                     }
+                )
+                ServerStatusPanel(
+                    lastPollAt = lastServerPollAt,
+                    lineFailState = lastLineFailState,
+                    pushResult = lastPushResult,
                 )
                 SetupChecklist(
                     permissions = permissions,
@@ -206,8 +223,8 @@ private fun Header(registered: Boolean, alarmRunning: Boolean) {
         else -> "Setup pending"
     }
     val detail = when {
-        alarmRunning -> "LINE_FAIL alert is active"
-        registered -> "Watching for grid power alerts"
+        alarmRunning -> "A critical power alert is active"
+        registered -> "Watching grid, battery, load, solar and cloud health"
         else -> "Connect this phone to Firebase alerts"
     }
     val color = when {
@@ -230,26 +247,21 @@ private fun Header(registered: Boolean, alarmRunning: Boolean) {
 
 @Composable
 private fun AlertRulesPanel(
-    lineFailMode: String,
-    pvLossMode: String,
+    alertModes: Map<String, String>,
     restoredNotifications: Boolean,
     onModeChanged: (String, String) -> Unit,
     onRestoredChanged: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Alert rules", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        AlertRuleRow(
-            title = "Grid failure",
-            subtitle = "LINE_FAIL",
-            mode = lineFailMode,
-            onModeChanged = { onModeChanged("LINE_FAIL", it) }
-        )
-        AlertRuleRow(
-            title = "Solar input loss",
-            subtitle = "PV_LOSS",
-            mode = pvLossMode,
-            onModeChanged = { onModeChanged("PV_LOSS", it) }
-        )
+        AlertCatalog.rules.forEach { rule ->
+            AlertRuleRow(
+                title = rule.title,
+                subtitle = rule.subtitle,
+                mode = alertModes[rule.alarm] ?: rule.defaultDadMode,
+                onModeChanged = { onModeChanged(rule.alarm, it) }
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -264,6 +276,59 @@ private fun AlertRulesPanel(
             }
             Switch(checked = restoredNotifications, onCheckedChange = onRestoredChanged)
         }
+    }
+}
+
+@Composable
+private fun PhoneRolePanel(role: String, onRoleChanged: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Phone role", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            ModeButton("Dad phone", role == AlertCatalog.ROLE_DAD, Modifier.weight(1f)) {
+                onRoleChanged(AlertCatalog.ROLE_DAD)
+            }
+            ModeButton("Monitor", role == AlertCatalog.ROLE_MONITOR, Modifier.weight(1f)) {
+                onRoleChanged(AlertCatalog.ROLE_MONITOR)
+            }
+        }
+        InfoPanel(
+            title = if (role == AlertCatalog.ROLE_DAD) "Loud alarm profile" else "Notification profile",
+            body = if (role == AlertCatalog.ROLE_DAD) {
+                "Grid failure, battery-low, and high-load alerts ring loudly. Solar loss, stale data, and summary stay as notifications."
+            } else {
+                "This phone receives the same cloud alerts as quiet notifications by default."
+            }
+        )
+    }
+}
+
+@Composable
+private fun ServerStatusPanel(lastPollAt: String, lineFailState: String, pushResult: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Server status", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White, RoundedCornerShape(8.dp))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatusLine("Last poll", lastPollAt)
+            StatusLine("LINE_FAIL", lineFailState)
+            StatusLine("Last push", pushResult)
+        }
+    }
+}
+
+@Composable
+private fun StatusLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(0.9f), fontWeight = FontWeight.SemiBold)
+        Text(value, modifier = Modifier.weight(1.4f), color = Color(0xFF4B5563))
     }
 }
 
@@ -392,7 +457,7 @@ private fun ServerRegistrationPanel(
         }
         InfoPanel(
             title = "Delivery",
-            body = "The phone subscribes to LINE_FAIL alerts through Firebase. Server registration is optional."
+            body = "The phone subscribes to power alerts through Firebase. Server registration is optional."
         )
         OutlinedTextField(
             value = serverUrl,
@@ -576,7 +641,7 @@ private fun subscribeToAlertTopic(context: Context, onDone: () -> Unit) {
         .addOnCompleteListener { task ->
             prefs.isRegistered = task.isSuccessful
             prefs.lastRegistrationStatus = if (task.isSuccessful) {
-                "Connected - watching for LINE_FAIL alerts"
+                "Connected - watching for power alerts"
             } else {
                 "Cloud subscription failed: ${task.exception?.message}"
             }
@@ -593,6 +658,9 @@ object RegistrationSecret {
         return digest.joinToString("") { "%02x".format(it) }
     }
 }
+
+private fun readAlertModes(prefs: PrefsManager): Map<String, String> =
+    AlertCatalog.rules.associate { it.alarm to prefs.alertMode(it.alarm) }
 
 private fun Context.openBatteryOptimizationSettings() {
     val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)

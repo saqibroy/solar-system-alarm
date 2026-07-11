@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from shinemonitor_api import ShineMonitorAPI
 from shinemonitor_api import _protocol as shine_protocol
-from shinemonitor_api.models import DeviceIdentifier
+from shinemonitor_api.models import DeviceIdentifier, LastData
 
 from .config import AlarmDefinition, WatcherConfig
 from .logging_config import extra
@@ -20,6 +22,17 @@ class DeviceTarget:
     sn: str
     devcode: int
     devaddr: int
+
+
+@dataclass(frozen=True)
+class InverterSnapshot:
+    timestamp: datetime
+    grid_voltage: Optional[float]
+    pv_input_power: Optional[int]
+    battery_capacity: Optional[int]
+    battery_discharge_current: Optional[float]
+    ac_output_active_power: Optional[int]
+    output_load_percent: Optional[int]
 
 
 class ShineMonitorWarningsClient:
@@ -91,6 +104,28 @@ class ShineMonitorWarningsClient:
             return []
         return [item for item in warnings if isinstance(item, dict)]
 
+    def fetch_last_data(self) -> InverterSnapshot:
+        target = self.ensure_target()
+        device = DeviceIdentifier(
+            pn=target.pn,
+            sn=target.sn,
+            devcode=target.devcode,
+            devaddr=target.devaddr,
+        )
+        try:
+            data = self.api.get_last_data(device)
+            return _snapshot_from_last_data(data)
+        except shine_protocol.ShineMonitorError as exc:
+            LOGGER.info("shinemonitor_sp_last_data_unavailable", extra=extra(error=str(exc)))
+
+        payload = self.api.query_device_last_data(
+            pn=target.pn,
+            devcode=target.devcode,
+            devaddr=target.devaddr,
+            sn=target.sn,
+        )
+        return _snapshot_from_title_rows(payload, self.config.data_alerts.local_timezone)
+
     def _select_device(self, devices: list[DeviceIdentifier]) -> DeviceIdentifier:
         if not devices:
             raise RuntimeError("ShineMonitor account returned no devices")
@@ -151,3 +186,66 @@ def _fallback_id(warning: dict[str, Any]) -> str:
         str(warning.get(key, ""))
         for key in ("pn", "devcode", "devaddr", "sn", "code", "desc", "gts")
     )
+
+
+def _snapshot_from_last_data(data: LastData) -> InverterSnapshot:
+    return InverterSnapshot(
+        timestamp=data.timestamp,
+        grid_voltage=data.main.grid_voltage,
+        pv_input_power=data.main.pv_input_power,
+        battery_capacity=data.main.battery_capacity,
+        battery_discharge_current=data.main.battery_discharge_current,
+        ac_output_active_power=data.main.ac_output_active_power,
+        output_load_percent=data.main.output_load_percent,
+    )
+
+
+def _snapshot_from_title_rows(payload: dict[str, Any], timezone_name: str) -> InverterSnapshot:
+    rows = payload.get("dat", [])
+    if not isinstance(rows, list):
+        raise RuntimeError(f"Unexpected queryDeviceLastData shape: {list(payload.keys())}")
+    values: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("title", "")).strip().lower()
+        val = str(row.get("val", "")).strip()
+        if title:
+            values[title] = val
+
+    timestamp_text = values.get("timestamp")
+    if not timestamp_text:
+        raise RuntimeError("queryDeviceLastData response did not include Timestamp")
+    timestamp = datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=ZoneInfo(timezone_name)
+    )
+
+    pv_power = _as_int(values.get("pv input power"))
+    if pv_power is None:
+        pv_power = (_as_int(values.get("pv1 charging power")) or 0) + (
+            _as_int(values.get("pv2 charging power")) or 0
+        )
+
+    return InverterSnapshot(
+        timestamp=timestamp,
+        grid_voltage=_as_float(values.get("grid voltage")),
+        pv_input_power=pv_power,
+        battery_capacity=_as_int(values.get("battery capacity")),
+        battery_discharge_current=_as_float(values.get("battery discharge current")),
+        ac_output_active_power=_as_int(values.get("ac output active power")),
+        output_load_percent=_as_int(values.get("output load percent")),
+    )
+
+
+def _as_float(value: Optional[str]) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _as_int(value: Optional[str]) -> Optional[int]:
+    number = _as_float(value)
+    return int(number) if number is not None else None
