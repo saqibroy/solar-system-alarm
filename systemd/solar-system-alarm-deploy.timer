@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll GitHub main and deploy solar-system-alarm
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Unit=solar-system-alarm-deploy.service
+
+[Install]
+WantedBy=timers.target

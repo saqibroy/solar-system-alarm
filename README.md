@@ -27,3 +27,10 @@ The exact warning descriptions/codes for `LINE_FAIL` and `PV_LOSS` must be verif
 ## Docs
 
 See [server/README.md](server/README.md) and [android/README.md](android/README.md).
+
+## Deployment
+
+Production runs on the Oracle VM with Docker Compose from `docker-compose.yml`.
+The VM has a `systemd` timer that checks this public GitHub repo's `main` branch
+about once per minute and rebuilds/restarts the Compose service when `main`
+changes. Secrets stay on the VM in `/etc/wapda-alarm/` and are not committed.

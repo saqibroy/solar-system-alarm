@@ -91,24 +91,23 @@ curl -X POST http://127.0.0.1:8088/register \
   -d '{"token":"FCM_TOKEN","device_name":"Dad phone"}'
 ```
 
-## Oracle VM Install
+## Oracle VM Install With Docker Compose
 
 ```bash
-sudo mkdir -p /opt/wapda-alarm
-sudo rsync -a ./server/ /opt/wapda-alarm/server/
-cd /opt/wapda-alarm/server
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
+sudo mkdir -p /etc/wapda-alarm /var/lib/wapda-alarm
+sudo cp wapda-alarm.env /etc/wapda-alarm/wapda-alarm.env
+sudo cp firebase-service-account.json /etc/wapda-alarm/firebase-service-account.json
+sudo chown root:opc /etc/wapda-alarm/*
+sudo chmod 640 /etc/wapda-alarm/*
 
-sudo cp systemd/wapda-alarm.service /etc/systemd/system/wapda-alarm.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now wapda-alarm
-sudo systemctl status wapda-alarm
-journalctl -u wapda-alarm -f
+git clone https://github.com/saqibroy/solar-system-alarm.git /opt/solar-system-alarm
+cd /opt/solar-system-alarm
+docker compose -p solar-system-alarm up -d --build
+docker compose -p solar-system-alarm ps
 ```
 
-If you want `/health` reachable from outside, open TCP port `8088` in the Oracle security list and local firewall. Keep `/register` protected by a long random `REGISTRATION_SECRET`.
+The Compose service binds `/health` to `127.0.0.1:8088` on the VM. Firebase
+delivery is outbound, so public inbound access to port `8088` is not required.
 
 ## Verify Before Relying On This
 
