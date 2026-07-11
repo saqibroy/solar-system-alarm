@@ -3,6 +3,7 @@ package com.saqib.wapdaalarm
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -10,8 +11,15 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         val prefs = PrefsManager(this)
         prefs.fcmToken = token
-        prefs.isRegistered = false
-        TokenRegistrar.registerAsync(this, token)
+        FirebaseMessaging.getInstance().subscribeToTopic(AlarmActions.FCM_TOPIC)
+            .addOnCompleteListener { task ->
+                prefs.isRegistered = task.isSuccessful
+                prefs.lastRegistrationStatus = if (task.isSuccessful) {
+                    "Connected - watching for LINE_FAIL alerts"
+                } else {
+                    "Cloud subscription failed: ${task.exception?.message}"
+                }
+            }
     }
 
     override fun onMessageReceived(message: RemoteMessage) {

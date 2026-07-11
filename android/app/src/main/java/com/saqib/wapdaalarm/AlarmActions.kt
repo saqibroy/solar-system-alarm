@@ -12,6 +12,7 @@ object AlarmActions {
 
     const val NOTIFICATION_CHANNEL_ID = "grid_power_alarm"
     const val NOTIFICATION_ID = 1001
+    const val FCM_TOPIC = "wapda-alarm-alerts"
 
     const val TEST_DURATION_MS = 10_000L
     const val AUTO_TIMEOUT_MS = 30 * 60 * 1000L

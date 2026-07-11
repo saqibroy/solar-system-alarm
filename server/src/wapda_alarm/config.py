@@ -47,6 +47,7 @@ class WatcherConfig:
     token_registry_file: Path
     firebase_credentials: Path
     fcm_device_tokens: tuple[str, ...]
+    fcm_topic: Optional[str]
     registration_secret: str
     health_host: str
     health_port: int
@@ -79,6 +80,7 @@ def load_config(env_file: Optional[str] = None) -> WatcherConfig:
         token_registry_file=Path(os.getenv("TOKEN_REGISTRY_FILE", "./tokens.json")),
         firebase_credentials=Path(_required("FIREBASE_CREDENTIALS")),
         fcm_device_tokens=tuple(_split_csv(os.getenv("FCM_DEVICE_TOKENS", ""))),
+        fcm_topic=_optional("FCM_TOPIC"),
         registration_secret=_required("REGISTRATION_SECRET"),
         health_host=os.getenv("HEALTH_HOST", "0.0.0.0"),
         health_port=int(os.getenv("HEALTH_PORT", "8088")),

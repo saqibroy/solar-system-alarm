@@ -162,11 +162,10 @@ private fun WapdaAlarmApp() {
                         val currentToken = prefs.fcmToken
                         if (currentToken.isBlank()) {
                             fetchToken(context) {
-                                TokenRegistrar.registerAsync(context, prefs.fcmToken) { _, _ -> refresh() }
                                 refresh()
                             }
                         } else {
-                            TokenRegistrar.registerAsync(context, currentToken) { _, _ -> refresh() }
+                            subscribeToAlertTopic(context) { refresh() }
                         }
                     }
                 )
@@ -251,13 +250,17 @@ private fun ServerRegistrationPanel(
     var secret by remember { mutableStateOf(prefs.registrationSecret) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Server connection", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text("Cloud alert subscription", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         if (!firebaseConfigured) {
             InfoPanel(
                 title = "Firebase config missing",
-                body = "Replace firebase_config.xml values before registering this phone."
+                body = "Add google-services.json before registering this phone."
             )
         }
+        InfoPanel(
+            title = "Delivery",
+            body = "The phone subscribes to LINE_FAIL alerts through Firebase. Server registration is optional."
+        )
         OutlinedTextField(
             value = serverUrl,
             onValueChange = { serverUrl = it },
@@ -281,7 +284,7 @@ private fun ServerRegistrationPanel(
                 Text("Save")
             }
             Button(onClick = onFetchToken, enabled = firebaseConfigured, modifier = Modifier.weight(1f)) {
-                Text("Get Token")
+                Text("Connect")
             }
         }
         Button(
@@ -292,7 +295,7 @@ private fun ServerRegistrationPanel(
             enabled = firebaseConfigured,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Register Phone")
+            Text("Reconnect Alerts")
         }
         InfoPanel(title = "Registration", body = status)
         SelectionContainer {
@@ -409,9 +412,24 @@ private fun fetchToken(context: Context, onDone: () -> Unit) {
         .addOnCompleteListener { task ->
             if (task.isSuccessful) {
                 prefs.fcmToken = task.result.orEmpty()
-                prefs.lastRegistrationStatus = "FCM token ready"
+                subscribeToAlertTopic(context, onDone)
+                return@addOnCompleteListener
             } else {
                 prefs.lastRegistrationStatus = "FCM token failed: ${task.exception?.message}"
+            }
+            onDone()
+        }
+}
+
+private fun subscribeToAlertTopic(context: Context, onDone: () -> Unit) {
+    val prefs = PrefsManager(context)
+    FirebaseMessaging.getInstance().subscribeToTopic(AlarmActions.FCM_TOPIC)
+        .addOnCompleteListener { task ->
+            prefs.isRegistered = task.isSuccessful
+            prefs.lastRegistrationStatus = if (task.isSuccessful) {
+                "Connected - watching for LINE_FAIL alerts"
+            } else {
+                "Cloud subscription failed: ${task.exception?.message}"
             }
             onDone()
         }

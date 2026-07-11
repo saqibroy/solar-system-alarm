@@ -24,7 +24,7 @@ def main() -> None:
     state_store = AlarmStateStore(config.state_file)
     token_registry = TokenRegistry(config.token_registry_file, config.fcm_device_tokens)
     status = RuntimeStatus()
-    fcm_sender = FcmAlarmSender(config.firebase_credentials)
+    fcm_sender = FcmAlarmSender(config.firebase_credentials, topic=config.fcm_topic)
     health_app = create_app(
         status,
         state_store,
