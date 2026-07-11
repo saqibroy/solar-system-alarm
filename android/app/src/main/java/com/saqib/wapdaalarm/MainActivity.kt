@@ -281,7 +281,11 @@ private fun ServerRegistrationPanel(
             }, modifier = Modifier.weight(1f)) {
                 Text("Save")
             }
-            Button(onClick = onFetchToken, enabled = firebaseConfigured, modifier = Modifier.weight(1f)) {
+            Button(onClick = {
+                prefs.saveServerSettings(serverUrl, secret)
+                onSave()
+                onFetchToken()
+            }, enabled = firebaseConfigured, modifier = Modifier.weight(1f)) {
                 Text("Connect")
             }
         }
