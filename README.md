@@ -12,7 +12,7 @@ Independent alarm path for a Knoxhybrid/ShineMonitor inverter installation. The 
 ## Setup Order
 
 1. Create a Firebase project, add an Android app with package `com.saqib.wapdaalarm`, and create a Firebase Admin service-account JSON.
-2. Put the Android Firebase values into `android/app/src/main/res/values/firebase_config.xml`.
+2. Download `google-services.json` and put it at `android/app/google-services.json`.
 3. Build and sideload the Android app, enter the Oracle server URL and registration secret, then register the phone.
 4. Configure `/server/.env` on the Oracle VM with ShineMonitor credentials, Knoxhybrid `companykey`, Firebase service-account path, and alarm definitions.
 5. Install the server as a `systemd` service and check `/health`.

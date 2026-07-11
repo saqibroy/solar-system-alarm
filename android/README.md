@@ -10,14 +10,15 @@ In Firebase, add an Android app with package:
 com.saqib.wapdaalarm
 ```
 
-Open the generated `google-services.json` and copy these values into `app/src/main/res/values/firebase_config.xml`:
+Download the generated `google-services.json` and place it here:
 
-- `mobilesdk_app_id` to `google_app_id`
-- `current_key` to `google_api_key`
-- `project_id` to `project_id`
-- `project_number` to `gcm_defaultSenderId`
+```text
+android/app/google-services.json
+```
 
-The checked-in file contains placeholders so the project can compile before real Firebase credentials are available. FCM token generation will not work until the values are replaced.
+The file is intentionally ignored by git because it is project-specific. The app uses the Google services Gradle plugin, so you do not need to copy Firebase values into XML manually.
+
+In the Firebase setup wizard, you only need Cloud Messaging for this app. Do not add Firebase Analytics unless you personally want it; this app does not use analytics.
 
 ## Build
 
@@ -27,6 +28,8 @@ Open `/android` in Android Studio and build the `app` module, or run:
 cd android
 ./gradlew assembleDebug
 ```
+
+The build requires `app/google-services.json`.
 
 Sideload:
 
