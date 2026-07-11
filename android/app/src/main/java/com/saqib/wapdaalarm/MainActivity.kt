@@ -1,0 +1,425 @@
+package com.saqib.wapdaalarm
+
+import android.Manifest
+import android.app.NotificationManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
+import com.google.firebase.messaging.FirebaseMessaging
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { WapdaAlarmApp() }
+    }
+}
+
+@Composable
+private fun WapdaAlarmApp() {
+    val context = LocalContext.current
+    val prefs = remember { PrefsManager(context) }
+    var permissions by remember { mutableStateOf(PermissionState.read(context)) }
+    var alarmRunning by remember { mutableStateOf(prefs.isAlarmRunning) }
+    var token by remember { mutableStateOf(prefs.fcmToken) }
+    var registered by remember { mutableStateOf(prefs.isRegistered) }
+    var lastEvent by remember { mutableStateOf(prefs.lastEvent) }
+    var registrationStatus by remember { mutableStateOf(prefs.lastRegistrationStatus) }
+
+    fun refresh() {
+        permissions = PermissionState.read(context)
+        alarmRunning = prefs.isAlarmRunning
+        token = prefs.fcmToken
+        registered = prefs.isRegistered
+        lastEvent = prefs.lastEvent
+        registrationStatus = prefs.lastRegistrationStatus
+    }
+
+    LaunchedEffect(Unit) {
+        refresh()
+        if (token.isBlank() && FirebaseConfig.isConfigured(context)) {
+            fetchToken(context) { refresh() }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) = refresh()
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(AlarmActions.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { refresh() }
+
+    MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme.copy(
+            primary = Color(0xFF176B5D),
+            secondary = Color(0xFF3E5C76),
+            background = Color(0xFFF6F7F9),
+            surface = Color.White,
+            error = Color(0xFFC53030)
+        )
+    ) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Header(registered = registered, alarmRunning = alarmRunning)
+                AlarmControls(
+                    alarmRunning = alarmRunning,
+                    onStop = {
+                        context.startService(Intent(context, AlarmForegroundService::class.java).setAction(AlarmActions.ACTION_STOP))
+                        refresh()
+                    },
+                    onTest = {
+                        ContextCompat.startForegroundService(
+                            context,
+                            Intent(context, AlarmForegroundService::class.java)
+                                .setAction(AlarmActions.ACTION_TEST)
+                                .putExtra(AlarmActions.EXTRA_DURATION_MS, AlarmActions.TEST_DURATION_MS)
+                        )
+                        refresh()
+                    }
+                )
+                SetupChecklist(
+                    permissions = permissions,
+                    onBattery = { context.openBatteryOptimizationSettings() },
+                    onPostNotifications = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                    onDnd = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+                )
+                ServerRegistrationPanel(
+                    prefs = prefs,
+                    token = token,
+                    status = registrationStatus,
+                    firebaseConfigured = FirebaseConfig.isConfigured(context),
+                    onSave = { refresh() },
+                    onFetchToken = { fetchToken(context) { refresh() } },
+                    onRegister = {
+                        val currentToken = prefs.fcmToken
+                        if (currentToken.isBlank()) {
+                            fetchToken(context) {
+                                TokenRegistrar.registerAsync(context, prefs.fcmToken) { _, _ -> refresh() }
+                                refresh()
+                            }
+                        } else {
+                            TokenRegistrar.registerAsync(context, currentToken) { _, _ -> refresh() }
+                        }
+                    }
+                )
+                OemPanel()
+                InfoPanel(title = "Last event", body = lastEvent)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Header(registered: Boolean, alarmRunning: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("WAPDA Alarm", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        val text = when {
+            alarmRunning -> "Alarm ringing"
+            registered -> "Connected - watching for alerts"
+            else -> "Setup pending"
+        }
+        val color = when {
+            alarmRunning -> Color(0xFFC53030)
+            registered -> Color(0xFF176B5D)
+            else -> Color(0xFF9A3412)
+        }
+        StatusPill(text = text, color = color)
+    }
+}
+
+@Composable
+private fun AlarmControls(alarmRunning: Boolean, onStop: () -> Unit, onTest: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(
+            onClick = onStop,
+            enabled = alarmRunning,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC53030))
+        ) {
+            Text("STOP ALARM", fontWeight = FontWeight.Bold)
+        }
+        OutlinedButton(
+            onClick = onTest,
+            enabled = !alarmRunning,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+        ) {
+            Text("Test Alarm for 10 seconds")
+        }
+    }
+}
+
+@Composable
+private fun SetupChecklist(
+    permissions: PermissionState,
+    onBattery: () -> Unit,
+    onPostNotifications: () -> Unit,
+    onDnd: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Phone permissions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        ChecklistRow("Disable battery optimization", permissions.ignoringBatteryOptimizations, onBattery)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ChecklistRow("Allow app notifications", permissions.postNotificationsAllowed, onPostNotifications)
+        }
+        ChecklistRow("Allow Do Not Disturb access", permissions.notificationPolicyAccess, onDnd)
+    }
+}
+
+@Composable
+private fun ServerRegistrationPanel(
+    prefs: PrefsManager,
+    token: String,
+    status: String,
+    firebaseConfigured: Boolean,
+    onSave: () -> Unit,
+    onFetchToken: () -> Unit,
+    onRegister: () -> Unit,
+) {
+    var serverUrl by remember { mutableStateOf(prefs.serverUrl) }
+    var secret by remember { mutableStateOf(prefs.registrationSecret) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Server connection", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        if (!firebaseConfigured) {
+            InfoPanel(
+                title = "Firebase config missing",
+                body = "Replace firebase_config.xml values before registering this phone."
+            )
+        }
+        OutlinedTextField(
+            value = serverUrl,
+            onValueChange = { serverUrl = it },
+            label = { Text("Server URL") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = secret,
+            onValueChange = { secret = it },
+            label = { Text("Registration secret") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = {
+                prefs.saveServerSettings(serverUrl, secret)
+                onSave()
+            }, modifier = Modifier.weight(1f)) {
+                Text("Save")
+            }
+            Button(onClick = onFetchToken, enabled = firebaseConfigured, modifier = Modifier.weight(1f)) {
+                Text("Get Token")
+            }
+        }
+        Button(
+            onClick = {
+                prefs.saveServerSettings(serverUrl, secret)
+                onRegister()
+            },
+            enabled = firebaseConfigured,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Register Phone")
+        }
+        InfoPanel(title = "Registration", body = status)
+        SelectionContainer {
+            Text(
+                text = if (token.isBlank()) "FCM token not available yet" else token,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF4B5563)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChecklistRow(label: String, checked: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = { onClick() })
+        Spacer(Modifier.width(8.dp))
+        Text(label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+        OutlinedButton(onClick = onClick) {
+            Text(if (checked) "Open" else "Grant")
+        }
+    }
+}
+
+@Composable
+private fun OemPanel() {
+    val guidance = remember { OemGuidanceProvider.current() }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFFFBEB), RoundedCornerShape(8.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("Phone battery settings", fontWeight = FontWeight.SemiBold)
+        Text(
+            "Enable Autostart, unrestricted battery use, and lock this app in Recents on Xiaomi, Oppo, Vivo, Realme and similar phones.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        guidance?.let {
+            Text(it.brand, fontWeight = FontWeight.SemiBold)
+            it.instructions.forEach { line -> Text("- $line", style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+}
+
+@Composable
+private fun InfoPanel(title: String, body: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(8.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(title, fontWeight = FontWeight.SemiBold)
+        Text(body, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF4B5563))
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, color: Color) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(text = text, color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private data class PermissionState(
+    val ignoringBatteryOptimizations: Boolean,
+    val postNotificationsAllowed: Boolean,
+    val notificationPolicyAccess: Boolean,
+) {
+    companion object {
+        fun read(context: Context): PermissionState {
+            val packageName = context.packageName
+            val powerManager = context.getSystemService<PowerManager>()
+            val notificationManager = context.getSystemService<NotificationManager>()
+            return PermissionState(
+                ignoringBatteryOptimizations = powerManager?.isIgnoringBatteryOptimizations(packageName) == true,
+                postNotificationsAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+                notificationPolicyAccess = notificationManager?.isNotificationPolicyAccessGranted == true,
+            )
+        }
+    }
+}
+
+private object FirebaseConfig {
+    fun isConfigured(context: Context): Boolean {
+        val appId = runCatching { context.getString(R.string.google_app_id) }.getOrDefault("")
+        val apiKey = runCatching { context.getString(R.string.google_api_key) }.getOrDefault("")
+        return appId.isNotBlank() && apiKey.isNotBlank() && "replace" !in appId.lowercase() && "replace" !in apiKey.lowercase()
+    }
+}
+
+private fun fetchToken(context: Context, onDone: () -> Unit) {
+    val prefs = PrefsManager(context)
+    if (!FirebaseConfig.isConfigured(context)) {
+        prefs.lastRegistrationStatus = "Firebase config is missing"
+        onDone()
+        return
+    }
+    FirebaseMessaging.getInstance().token
+        .addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                prefs.fcmToken = task.result.orEmpty()
+                prefs.lastRegistrationStatus = "FCM token ready"
+            } else {
+                prefs.lastRegistrationStatus = "FCM token failed: ${task.exception?.message}"
+            }
+            onDone()
+        }
+}
+
+private fun Context.openBatteryOptimizationSettings() {
+    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        .setData(Uri.parse("package:$packageName"))
+    runCatching { startActivity(intent) }
+        .onFailure { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+}

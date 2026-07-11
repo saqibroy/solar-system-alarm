@@ -1,0 +1,13 @@
+.DS_Store
+.env
+*.log
+*.pyc
+__pycache__/
+.venv/
+.gradle/
+build/
+local.properties
+google-services.json
+firebase-service-account.json
+state.json
+tokens.json

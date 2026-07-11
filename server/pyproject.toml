@@ -1,0 +1,23 @@
+[project]
+name = "wapda-alarm-watcher"
+version = "0.1.0"
+description = "ShineMonitor alarm watcher that sends FCM alarm pushes"
+requires-python = ">=3.9"
+dependencies = [
+    "firebase-admin>=6.5,<7",
+    "Flask>=3.0,<4",
+    "python-dotenv>=1.0,<2",
+    "shinemonitor-api>=0.7,<0.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
+
+[project.scripts]
+wapda-alarm-watcher = "wapda_alarm.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

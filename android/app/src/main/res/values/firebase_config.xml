@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Replace these with values from your Firebase Android app before real device testing. -->
+    <string name="google_app_id">1:000000000000:android:replace_me</string>
+    <string name="google_api_key">replace_me</string>
+    <string name="project_id">replace-me</string>
+    <string name="gcm_defaultSenderId">000000000000</string>
+</resources>

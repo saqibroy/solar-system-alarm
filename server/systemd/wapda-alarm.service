@@ -1,0 +1,21 @@
+[Unit]
+Description=WAPDA ShineMonitor alarm watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/opt/wapda-alarm/server
+EnvironmentFile=/etc/wapda-alarm/wapda-alarm.env
+ExecStart=/opt/wapda-alarm/server/.venv/bin/python -m wapda_alarm
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/wapda-alarm
+
+[Install]
+WantedBy=multi-user.target
