@@ -11,7 +11,9 @@ object AlarmActions {
     const val EXTRA_MESSAGE = "message"
 
     const val NOTIFICATION_CHANNEL_ID = "grid_power_alarm"
+    const val STATUS_NOTIFICATION_CHANNEL_ID = "grid_power_status"
     const val NOTIFICATION_ID = 1001
+    const val RESTORED_NOTIFICATION_ID = 1002
     const val FCM_TOPIC = "wapda-alarm-alerts"
     const val REGISTRATION_SECRET_SHA256 = "3e2b876b7b5c52e6b791c4edd03870c8703015e3cee0983706974d84144ef8f6"
 

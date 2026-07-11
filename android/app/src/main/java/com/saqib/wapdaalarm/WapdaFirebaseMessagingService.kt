@@ -1,8 +1,16 @@
 package com.saqib.wapdaalarm
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -55,9 +63,53 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun stopAlarm(alarm: String) {
-        PrefsManager(this).lastEvent = "$alarm cleared; stopping alarm"
+        val prefs = PrefsManager(this)
+        prefs.lastEvent = "$alarm cleared; grid power restored"
         val intent = Intent(this, AlarmForegroundService::class.java).setAction(AlarmActions.ACTION_STOP)
         ContextCompat.startForegroundService(this, intent)
+        showRestoredNotification(alarm)
+    }
+
+    private fun showRestoredNotification(alarm: String) {
+        createStatusChannel()
+        val openPendingIntent = PendingIntent.getActivity(
+            this,
+            4,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val title = if (alarm == "PV_LOSS") "Solar input restored" else "Grid power restored"
+        val body = if (alarm == "PV_LOSS") {
+            "PV loss has cleared."
+        } else {
+            "LINE_FAIL has cleared. Electricity is back."
+        }
+        val notification = NotificationCompat.Builder(this, AlarmActions.STATUS_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setContentIntent(openPendingIntent)
+            .build()
+
+        NotificationManagerCompat.from(this).notify(AlarmActions.RESTORED_NOTIFICATION_ID, notification)
+    }
+
+    private fun createStatusChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val notificationManager = getSystemService<NotificationManager>() ?: return
+        val channel = NotificationChannel(
+            AlarmActions.STATUS_NOTIFICATION_CHANNEL_ID,
+            "Grid power status",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "Notifications when grid power alarms clear"
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+        notificationManager.createNotificationChannel(channel)
     }
 
     private companion object {
