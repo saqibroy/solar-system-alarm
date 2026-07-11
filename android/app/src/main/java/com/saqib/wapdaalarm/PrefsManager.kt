@@ -34,6 +34,17 @@ class PrefsManager(context: Context) {
         get() = prefs.getString(KEY_LAST_REGISTRATION_STATUS, "Not registered yet").orEmpty()
         set(value) = prefs.edit { putString(KEY_LAST_REGISTRATION_STATUS, value) }
 
+    var restoredNotificationsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_RESTORED_NOTIFICATIONS, true)
+        set(value) = prefs.edit { putBoolean(KEY_RESTORED_NOTIFICATIONS, value) }
+
+    fun alertMode(alarm: String): String =
+        prefs.getString(alertModeKey(alarm), defaultAlertMode(alarm)).orEmpty()
+
+    fun setAlertMode(alarm: String, mode: String) {
+        prefs.edit { putString(alertModeKey(alarm), mode) }
+    }
+
     fun saveServerSettings(serverUrl: String, registrationSecret: String) {
         prefs.edit {
             putString(KEY_SERVER_URL, serverUrl.trim().trimEnd('/'))
@@ -51,5 +62,20 @@ class PrefsManager(context: Context) {
         const val KEY_ALARM_RUNNING = "alarm_running"
         const val KEY_LAST_EVENT = "last_event"
         const val KEY_LAST_REGISTRATION_STATUS = "last_registration_status"
+        const val KEY_RESTORED_NOTIFICATIONS = "restored_notifications"
+
+        fun alertModeKey(alarm: String): String = "alert_mode_${alarm.lowercase()}"
+
+        fun defaultAlertMode(alarm: String): String =
+            when (alarm) {
+                "PV_LOSS" -> AlertMode.NOTIFICATION
+                else -> AlertMode.ALARM
+            }
     }
+}
+
+object AlertMode {
+    const val ALARM = "alarm"
+    const val NOTIFICATION = "notification"
+    const val OFF = "off"
 }

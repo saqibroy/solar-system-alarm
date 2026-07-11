@@ -43,9 +43,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 2. Grant notification permission, DND access, and battery optimization exemption.
 3. Enter the server URL, for example `http://158.180.30.164:8088`.
 4. Enter the same `REGISTRATION_SECRET` used on the server.
-5. Tap `Get Token`, then `Register Phone`.
+5. Tap `Connect`.
 6. Tap `Test Alarm for 10 seconds`.
 7. On Xiaomi, Oppo, Vivo, Realme, Poco, Redmi and similar devices, manually enable Autostart, unrestricted battery/background use, and lock the app in Recents.
+
+## Alert Modes
+
+The app can handle each incoming alert as:
+
+- `Alarm`: start the loud full-screen alarm.
+- `Notify`: show a normal notification only.
+- `Off`: ignore that alert on this phone.
+
+`LINE_FAIL` defaults to `Alarm`. Restored/clear messages default to a normal notification.
 
 ## FCM Payloads
 

@@ -3,7 +3,6 @@ package com.saqib.wapdaalarm
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
@@ -54,6 +53,18 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
             "PV_LOSS" -> "Solar input is lost. Check load and battery drain."
             else -> "Grid power is out. Turn off the air conditioner before the battery drains."
         }
+        val prefs = PrefsManager(this)
+        when (prefs.alertMode(alarm)) {
+            AlertMode.OFF -> {
+                prefs.lastEvent = "$alarm alert ignored"
+                return
+            }
+            AlertMode.NOTIFICATION -> {
+                prefs.lastEvent = "$alarm notification received"
+                showStatusNotification(alarm, activeTitle(alarm), message)
+                return
+            }
+        }
         val intent = Intent(this, AlarmForegroundService::class.java)
             .setAction(AlarmActions.ACTION_START)
             .putExtra(AlarmActions.EXTRA_ALARM_NAME, alarm)
@@ -65,12 +76,22 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
     private fun stopAlarm(alarm: String) {
         val prefs = PrefsManager(this)
         prefs.lastEvent = "$alarm cleared; grid power restored"
-        val intent = Intent(this, AlarmForegroundService::class.java).setAction(AlarmActions.ACTION_STOP)
-        ContextCompat.startForegroundService(this, intent)
-        showRestoredNotification(alarm)
+        if (prefs.isAlarmRunning) {
+            val intent = Intent(this, AlarmForegroundService::class.java).setAction(AlarmActions.ACTION_STOP)
+            ContextCompat.startForegroundService(this, intent)
+        }
+        if (prefs.restoredNotificationsEnabled && prefs.alertMode(alarm) != AlertMode.OFF) {
+            val title = if (alarm == "PV_LOSS") "Solar input restored" else "Grid power restored"
+            val body = if (alarm == "PV_LOSS") {
+                "PV loss has cleared."
+            } else {
+                "LINE_FAIL has cleared. Electricity is back."
+            }
+            showStatusNotification(alarm, title, body)
+        }
     }
 
-    private fun showRestoredNotification(alarm: String) {
+    private fun showStatusNotification(alarm: String, title: String, body: String) {
         createStatusChannel()
         val openPendingIntent = PendingIntent.getActivity(
             this,
@@ -78,12 +99,6 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val title = if (alarm == "PV_LOSS") "Solar input restored" else "Grid power restored"
-        val body = if (alarm == "PV_LOSS") {
-            "PV loss has cleared."
-        } else {
-            "LINE_FAIL has cleared. Electricity is back."
-        }
         val notification = NotificationCompat.Builder(this, AlarmActions.STATUS_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle(title)
@@ -95,8 +110,16 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
             .setContentIntent(openPendingIntent)
             .build()
 
-        NotificationManagerCompat.from(this).notify(AlarmActions.RESTORED_NOTIFICATION_ID, notification)
+        runCatching {
+            NotificationManagerCompat.from(this).notify(notificationIdFor(alarm), notification)
+        }
     }
+
+    private fun activeTitle(alarm: String): String =
+        if (alarm == "PV_LOSS") "Solar input lost" else "Grid power out"
+
+    private fun notificationIdFor(alarm: String): Int =
+        if (alarm == "PV_LOSS") AlarmActions.RESTORED_NOTIFICATION_ID + 1 else AlarmActions.RESTORED_NOTIFICATION_ID
 
     private fun createStatusChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

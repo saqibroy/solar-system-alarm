@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,11 +33,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -74,6 +79,9 @@ private fun WapdaAlarmApp() {
     var registered by remember { mutableStateOf(prefs.isRegistered) }
     var lastEvent by remember { mutableStateOf(prefs.lastEvent) }
     var registrationStatus by remember { mutableStateOf(prefs.lastRegistrationStatus) }
+    var lineFailMode by remember { mutableStateOf(prefs.alertMode("LINE_FAIL")) }
+    var pvLossMode by remember { mutableStateOf(prefs.alertMode("PV_LOSS")) }
+    var restoredNotifications by remember { mutableStateOf(prefs.restoredNotificationsEnabled) }
 
     fun refresh() {
         permissions = PermissionState.read(context)
@@ -82,6 +90,9 @@ private fun WapdaAlarmApp() {
         registered = prefs.isRegistered
         lastEvent = prefs.lastEvent
         registrationStatus = prefs.lastRegistrationStatus
+        lineFailMode = prefs.alertMode("LINE_FAIL")
+        pvLossMode = prefs.alertMode("PV_LOSS")
+        restoredNotifications = prefs.restoredNotificationsEnabled
     }
 
     LaunchedEffect(Unit) {
@@ -139,6 +150,19 @@ private fun WapdaAlarmApp() {
                         refresh()
                     }
                 )
+                AlertRulesPanel(
+                    lineFailMode = lineFailMode,
+                    pvLossMode = pvLossMode,
+                    restoredNotifications = restoredNotifications,
+                    onModeChanged = { alarm, mode ->
+                        prefs.setAlertMode(alarm, mode)
+                        refresh()
+                    },
+                    onRestoredChanged = {
+                        prefs.restoredNotificationsEnabled = it
+                        refresh()
+                    }
+                )
                 SetupChecklist(
                     permissions = permissions,
                     onBattery = { context.openBatteryOptimizationSettings() },
@@ -176,19 +200,130 @@ private fun WapdaAlarmApp() {
 
 @Composable
 private fun Header(registered: Boolean, alarmRunning: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("WAPDA Alarm", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        val text = when {
-            alarmRunning -> "Alarm ringing"
-            registered -> "Connected - watching for alerts"
-            else -> "Setup pending"
-        }
-        val color = when {
-            alarmRunning -> Color(0xFFC53030)
-            registered -> Color(0xFF176B5D)
-            else -> Color(0xFF9A3412)
-        }
+    val text = when {
+        alarmRunning -> "Alarm ringing"
+        registered -> "Connected"
+        else -> "Setup pending"
+    }
+    val detail = when {
+        alarmRunning -> "LINE_FAIL alert is active"
+        registered -> "Watching for grid power alerts"
+        else -> "Connect this phone to Firebase alerts"
+    }
+    val color = when {
+        alarmRunning -> Color(0xFFC53030)
+        registered -> Color(0xFF176B5D)
+        else -> Color(0xFF9A3412)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("WAPDA Alarm", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(detail, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF374151))
         StatusPill(text = text, color = color)
+    }
+}
+
+@Composable
+private fun AlertRulesPanel(
+    lineFailMode: String,
+    pvLossMode: String,
+    restoredNotifications: Boolean,
+    onModeChanged: (String, String) -> Unit,
+    onRestoredChanged: (Boolean) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Alert rules", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        AlertRuleRow(
+            title = "Grid failure",
+            subtitle = "LINE_FAIL",
+            mode = lineFailMode,
+            onModeChanged = { onModeChanged("LINE_FAIL", it) }
+        )
+        AlertRuleRow(
+            title = "Solar input loss",
+            subtitle = "PV_LOSS",
+            mode = pvLossMode,
+            onModeChanged = { onModeChanged("PV_LOSS", it) }
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White, RoundedCornerShape(8.dp))
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Restored notification", fontWeight = FontWeight.SemiBold)
+                Text("Show when an alert clears", style = MaterialTheme.typography.bodySmall, color = Color(0xFF6B7280))
+            }
+            Switch(checked = restoredNotifications, onCheckedChange = onRestoredChanged)
+        }
+    }
+}
+
+@Composable
+private fun AlertRuleRow(
+    title: String,
+    subtitle: String,
+    mode: String,
+    onModeChanged: (String) -> Unit,
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(title, fontWeight = FontWeight.SemiBold)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color(0xFF6B7280))
+                }
+                ModePill(mode)
+            }
+            HorizontalDivider(color = Color(0xFFE5E7EB))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ModeButton("Alarm", mode == AlertMode.ALARM, Modifier.weight(1f)) { onModeChanged(AlertMode.ALARM) }
+                ModeButton("Notify", mode == AlertMode.NOTIFICATION, Modifier.weight(1f)) { onModeChanged(AlertMode.NOTIFICATION) }
+                ModeButton("Off", mode == AlertMode.OFF, Modifier.weight(1f)) { onModeChanged(AlertMode.OFF) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    if (selected) {
+        Button(onClick = onClick, modifier = modifier.height(42.dp)) {
+            Text(label)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier.height(42.dp)) {
+            Text(label)
+        }
+    }
+}
+
+@Composable
+private fun ModePill(mode: String) {
+    val (label, color) = when (mode) {
+        AlertMode.NOTIFICATION -> "Notify" to Color(0xFF3E5C76)
+        AlertMode.OFF -> "Off" to Color(0xFF6B7280)
+        else -> "Alarm" to Color(0xFFC53030)
+    }
+    Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Text(label, color = color, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
     }
 }
 
