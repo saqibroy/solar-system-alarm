@@ -8,6 +8,7 @@ Type=simple
 User=opc
 WorkingDirectory=/opt/wapda-alarm/server
 EnvironmentFile=/etc/wapda-alarm/wapda-alarm.env
+Environment=PYTHONWARNINGS=ignore::FutureWarning
 ExecStart=/opt/wapda-alarm/server/.venv/bin/python -m wapda_alarm
 Restart=always
 RestartSec=10
