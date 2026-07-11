@@ -24,14 +24,22 @@ def main() -> None:
     state_store = AlarmStateStore(config.state_file)
     token_registry = TokenRegistry(config.token_registry_file, config.fcm_device_tokens)
     status = RuntimeStatus()
-    health_app = create_app(status, state_store, token_registry, config.registration_secret)
+    fcm_sender = FcmAlarmSender(config.firebase_credentials)
+    health_app = create_app(
+        status,
+        state_store,
+        token_registry,
+        config.registration_secret,
+        fcm_sender=fcm_sender,
+        alarms=config.alarms,
+    )
     start_health_server(health_app, config.health_host, config.health_port)
 
     poller = AlarmPoller(
         config=config,
         state_store=state_store,
         token_registry=token_registry,
-        fcm_sender=FcmAlarmSender(config.firebase_credentials),
+        fcm_sender=fcm_sender,
         status=status,
     )
 

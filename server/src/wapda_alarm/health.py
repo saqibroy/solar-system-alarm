@@ -7,8 +7,10 @@ from typing import Any, Optional
 
 from flask import Flask, jsonify, request
 
+from .config import AlarmDefinition
+from .fcm import FcmAlarmSender
 from .registry import TokenRegistry
-from .state import AlarmStateStore
+from .state import AlarmStateStore, Transition
 
 
 @dataclass
@@ -25,8 +27,11 @@ def create_app(
     state_store: AlarmStateStore,
     token_registry: TokenRegistry,
     registration_secret: str,
+    fcm_sender: Optional[FcmAlarmSender] = None,
+    alarms: tuple[AlarmDefinition, ...] = (),
 ) -> Flask:
     app = Flask(__name__)
+    alarm_by_name = {alarm.name: alarm for alarm in alarms}
 
     @app.get("/health")
     def health() -> Any:
@@ -58,9 +63,38 @@ def create_app(
         if not token:
             return jsonify({"ok": False, "error": "missing token"}), 400
         token_registry.upsert(token, device_name=device_name)
-        return jsonify({"ok": True, "registered_tokens": len(token_registry.tokens())})
+        resent = _send_current_active_alarms(token, state_store, fcm_sender, alarm_by_name)
+        return jsonify({"ok": True, "registered_tokens": len(token_registry.tokens()), "resent_active_alarms": resent})
 
     return app
+
+
+def _send_current_active_alarms(
+    token: str,
+    state_store: AlarmStateStore,
+    fcm_sender: Optional[FcmAlarmSender],
+    alarm_by_name: dict[str, AlarmDefinition],
+) -> int:
+    if fcm_sender is None:
+        return 0
+    sent = 0
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    for alarm_name, active_ids in state_store.active_alarms().items():
+        alarm = alarm_by_name.get(alarm_name)
+        if alarm is None:
+            continue
+        fcm_sender.send_transition(
+            Transition(
+                alarm=alarm_name,
+                event_type="alarm_start",
+                active_ids=tuple(active_ids),
+                timestamp=now,
+            ),
+            alarm,
+            [token],
+        )
+        sent += 1
+    return sent
 
 
 def start_health_server(app: Flask, host: str, port: int) -> threading.Thread:
