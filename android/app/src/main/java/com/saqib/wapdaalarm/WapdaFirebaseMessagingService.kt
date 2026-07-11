@@ -11,6 +11,11 @@ class WapdaFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         val prefs = PrefsManager(this)
         prefs.fcmToken = token
+        if (!RegistrationSecret.isValid(prefs.registrationSecret)) {
+            prefs.isRegistered = false
+            prefs.lastRegistrationStatus = "Enter the correct registration secret to connect"
+            return
+        }
         FirebaseMessaging.getInstance().subscribeToTopic(AlarmActions.FCM_TOPIC)
             .addOnCompleteListener { task ->
                 prefs.isRegistered = task.isSuccessful

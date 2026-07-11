@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.google.firebase.messaging.FirebaseMessaging
+import java.security.MessageDigest
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,9 +86,6 @@ private fun WapdaAlarmApp() {
 
     LaunchedEffect(Unit) {
         refresh()
-        if (token.isBlank() && FirebaseConfig.isConfigured(context)) {
-            fetchToken(context) { refresh() }
-        }
     }
 
     DisposableEffect(Unit) {
@@ -408,6 +406,12 @@ private fun fetchToken(context: Context, onDone: () -> Unit) {
         onDone()
         return
     }
+    if (!RegistrationSecret.isValid(prefs.registrationSecret)) {
+        prefs.isRegistered = false
+        prefs.lastRegistrationStatus = "Wrong registration secret"
+        onDone()
+        return
+    }
     FirebaseMessaging.getInstance().token
         .addOnCompleteListener { task ->
             if (task.isSuccessful) {
@@ -423,6 +427,12 @@ private fun fetchToken(context: Context, onDone: () -> Unit) {
 
 private fun subscribeToAlertTopic(context: Context, onDone: () -> Unit) {
     val prefs = PrefsManager(context)
+    if (!RegistrationSecret.isValid(prefs.registrationSecret)) {
+        prefs.isRegistered = false
+        prefs.lastRegistrationStatus = "Wrong registration secret"
+        onDone()
+        return
+    }
     FirebaseMessaging.getInstance().subscribeToTopic(AlarmActions.FCM_TOPIC)
         .addOnCompleteListener { task ->
             prefs.isRegistered = task.isSuccessful
@@ -433,6 +443,16 @@ private fun subscribeToAlertTopic(context: Context, onDone: () -> Unit) {
             }
             onDone()
         }
+}
+
+object RegistrationSecret {
+    fun isValid(secret: String): Boolean =
+        sha256(secret.trim()) == AlarmActions.REGISTRATION_SECRET_SHA256
+
+    private fun sha256(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
 }
 
 private fun Context.openBatteryOptimizationSettings() {
